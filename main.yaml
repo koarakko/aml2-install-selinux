@@ -1,0 +1,48 @@
+- hosts: server
+  tasks:
+    - name: upgrade all packages with yum
+      yum: name=* state=latest
+      become: true
+
+    - name: Install the packages with yum
+      yum: name={{ item }} state=installed
+      with_items:
+      - selinux-policy-targeted
+      - policycoreutils-python
+      - setools-console
+      become: true
+
+    - name: Check selinux status
+      shell: /usr/sbin/getenforce
+      register: selinux_status
+      changed_when: False
+      tags: selinux
+
+    - name: Setting selinux
+      shell: |
+        rm -f /etc/sysconfig/selinux
+        ln -s /etc/selinux/config /etc/sysconfig/selinux
+        sed -i 's/SELINUX=disabled/SELINUX=permissive/g' /etc/selinux/config
+        sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=\"console=tty0 console=ttyS0,115200n8 /GRUB_CMDLINE_LINUX_DEFAULT=\"console=ttyS0,115200n8 console=tty0 selinux=1 security=selinux enforcing=0 /g' /etc/default/grub
+        touch /.autorelabel
+        grub2-mkconfig -o /etc/grub2.cfg
+      when: selinux_status.stdout == 'Disabled'
+      tags: selinux
+      become: True
+
+    - name: reboot
+      shell: "sleep 2 && reboot"
+      async: 1
+      poll: 0
+      when: selinux_status.stdout == 'Disabled'
+      tags: selinu
+      become: True
+
+    - name: waiting reboot
+      wait_for_connection:
+        connect_timeout: 20
+        sleep: 5
+        delay: 5
+        timeout: 120
+      when: selinux_status.stdout == 'Disabled'
+      tags: selinu
